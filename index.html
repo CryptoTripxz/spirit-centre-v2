@@ -246,6 +246,9 @@ html,body{height:100%;overflow:hidden;background:#07091A;}
 #add-prayer-modal{display:none;position:fixed;inset:0;z-index:9999;
   background:rgba(0,0,0,0.60);backdrop-filter:blur(8px);align-items:flex-end;}
 #add-prayer-modal.open{display:flex;}
+#add-fav-verse-modal{display:none;position:fixed;inset:0;z-index:9999;
+  background:rgba(0,0,0,0.60);backdrop-filter:blur(8px);align-items:flex-end;}
+#add-fav-verse-modal.open{display:flex;}
 .ap-sheet{background:linear-gradient(180deg,#1A1040,#120D30);
   border:1px solid rgba(123,79,212,0.28);border-radius:26px 26px 0 0;
   padding:20px 18px calc(env(safe-area-inset-bottom,20px)+20px);
@@ -394,7 +397,8 @@ html,body{height:100%;overflow:hidden;background:#07091A;}
             </div>
           </div>
           <div class="sp-audio-tracks" id="sp-audio-tracks"></div>
-          <audio id="sp-audio" preload="none"></audio>
+          <button class="sp-vbtn" onclick="openAddFavVerseModal()" style="margin-top:12px;width:100%;">💎 Add to Favourites</button>
+          <audio id="sp-audio" preload="metadata"></audio>
         </div>
       </div>
     </div>
@@ -483,6 +487,17 @@ html,body{height:100%;overflow:hidden;background:#07091A;}
       <div class="ap-btns">
         <button class="ap-cancel" onclick="closeAddPrayerModal()">Cancel</button>
         <button class="ap-save" onclick="addPrayer()">Add</button>
+      </div>
+    </div>
+  </div>
+  <div id="add-fav-verse-modal" onclick="closeAddFavVerseModal(event)">
+    <div class="ap-sheet" onclick="event.stopPropagation()">
+      <div class="ap-title">Save as Favourite Verse</div>
+      <textarea class="ap-inp" id="afv-text" placeholder="Enter the verse text..." maxlength="500" style="height:120px;resize:none;"></textarea>
+      <input type="text" class="ap-inp" id="afv-ref" placeholder="e.g., John 3:16" maxlength="50" style="margin-top:10px;">
+      <div class="ap-btns">
+        <button class="ap-cancel" onclick="closeAddFavVerseModal()">Cancel</button>
+        <button class="ap-save" onclick="addFavVerse()">Save</button>
       </div>
     </div>
   </div>
@@ -601,6 +616,10 @@ function delGrat(i){_grat.splice(i,1);updateGratitude();save();}
 function openAddPrayerModal(){document.getElementById('add-prayer-modal').classList.add('open');}
 function closeAddPrayerModal(e){if(!e||e.target===document.getElementById('add-prayer-modal'))document.getElementById('add-prayer-modal').classList.remove('open');}
 function addPrayer(){var inp=document.getElementById('ap-inp');var txt=inp.value;if(txt){_prayers.push({text:txt,prayed:false});inp.value='';closeAddPrayerModal();updatePrayers();save();showToast('Prayer added 🙏');}}
+function openAddFavVerseModal(){document.getElementById('add-fav-verse-modal').classList.add('open');}
+function closeAddFavVerseModal(e){if(!e||e.target===document.getElementById('add-fav-verse-modal'))document.getElementById('add-fav-verse-modal').classList.remove('open');}
+function addFavVerse(){var txt=document.getElementById('afv-text').value;var ref=document.getElementById('afv-ref').value;if(txt&&ref){_favs.push({t:txt,r:ref});document.getElementById('afv-text').value='';document.getElementById('afv-ref').value='';closeAddFavVerseModal();updateFavs();save();showToast('Verse added to favourites! 💎');}else{showToast('Please fill all fields');}}
+
 function openCandle(){document.getElementById('candle-overlay').classList.add('open');document.getElementById('candle-btn').classList.add('lit');}
 function closeCandle(e){if(!e||e.target===document.getElementById('candle-overlay')){document.getElementById('candle-overlay').classList.remove('open');document.getElementById('candle-btn').classList.remove('lit');}}
 function toggleSection(el){el.classList.toggle('collapsed');el.nextElementSibling.classList.toggle('collapsed');}
@@ -709,13 +728,33 @@ var TRACKS=[
   {src:'Psalm_124.mp3',                   title:'Today\'s Reading — <span>Psalm 124</span>'},
   {src:'Jeremiah_31_3_Lamentations_3_22_-_23__1_.mp3', title:'Today\'s Reading — <span>Jeremiah 31:3 · Lamentations 3:22-23</span>'}
 ];
-var aud=document.getElementById('sp-audio');
-var btn=document.getElementById('audio-play-btn');
-var icon=btn.querySelector('svg');
-var seek=document.getElementById('audio-seek');
-var curEl=document.getElementById('audio-cur');
-var durEl=document.getElementById('audio-dur');
-var titleEl=document.getElementById('audio-now-title');
+var aud,btn,icon,seek,curEl,durEl,titleEl;
+function initAudio(){
+  aud=document.getElementById('sp-audio');
+  btn=document.getElementById('audio-play-btn');
+  icon=btn.querySelector('svg');
+  seek=document.getElementById('audio-seek');
+  curEl=document.getElementById('audio-cur');
+  durEl=document.getElementById('audio-dur');
+  titleEl=document.getElementById('audio-now-title');
+  aud.addEventListener('loadedmetadata',function(){durEl.textContent=fmt(aud.duration);});
+  aud.addEventListener('timeupdate',function(){
+    if(!aud.duration)return;
+    seek.value=(aud.currentTime/aud.duration)*100;
+    curEl.textContent=fmt(aud.currentTime);
+  });
+  aud.addEventListener('ended',function(){
+    setPlaying(false);
+    var next=(_curAudio+1)%TRACKS.length;
+    audioLoad(next);
+  });
+  aud.addEventListener('error',function(){
+    showToast('Error loading audio 🔇');
+  });
+  aud.addEventListener('canplay',function(){
+    showToast('Audio ready ▶️');
+  });
+}
 function fmt(s){var m=Math.floor(s/60);var ss=Math.floor(s%60);return m+':'+(ss<10?'0':'')+ss;}
 function setPlaying(p){
   icon.innerHTML=p
@@ -730,20 +769,14 @@ function setActiveTrack(i){
   titleEl.innerHTML=TRACKS[i].title;
   seek.value=0; curEl.textContent='0:00'; durEl.textContent='--:--';
 }
-aud.addEventListener('loadedmetadata',function(){durEl.textContent=fmt(aud.duration);});
-aud.addEventListener('timeupdate',function(){
-  if(!aud.duration)return;
-  seek.value=(aud.currentTime/aud.duration)*100;
-  curEl.textContent=fmt(aud.currentTime);
-});
-aud.addEventListener('ended',function(){
-  setPlaying(false);
-  var next=(_curAudio+1)%TRACKS.length;
-  audioLoad(next);
-});
 function audioToggle(){
-  if(aud.paused){aud.play();setPlaying(true);}
-  else{aud.pause();setPlaying(false);}
+  if(aud.paused){
+    aud.play().catch(function(err){showToast('Cannot play audio 🔇');});
+    setPlaying(true);
+  }else{
+    aud.pause();
+    setPlaying(false);
+  }
 }
 function audioSeek(v){
   if(aud.duration)aud.currentTime=(v/100)*aud.duration;
@@ -755,7 +788,12 @@ function audioLoad(i){
   aud.load();
   setActiveTrack(i);
   setPlaying(false);
-  if(wasPlaying){aud.play();setPlaying(true);}
+  if(wasPlaying){
+    setTimeout(function(){
+      aud.play().catch(function(err){showToast('Cannot play audio 🔇');});
+      setPlaying(true);
+    },200);
+  }
 }
 
 /* ═══ TOAST ═══ */
@@ -772,7 +810,11 @@ function showToast(msg){
 function dismissToast(){document.getElementById('toast').classList.remove('show');clearTimeout(_tt);}
 
 /* ═══ INIT ═══ */
-load();render();
+load();
+setTimeout(function(){
+  render();
+  initAudio();
+},100);
 </script>
 </body>
 </html>
